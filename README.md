@@ -17,7 +17,7 @@ Si nécessaire, l'agent WAPT est disponible à cette adresse : [https://wapt.tra
 
 5. **Configuration :** Modifiez le fichier `integration.conf` en insérant les valeurs appropriées et les clés d'API Cyberwatch.
 
-6. **Test :** Pour tester le fonctionnement, lancez le proxy en utilisant la commande `/opt/wapt/waptpython proxy.py`.
+6. **Test :** Pour tester le fonctionnement, lancez le proxy en utilisant la commande ` sudo /opt/wapt/waptpython.sh wapt.py`.
 
 ### Configuration de Cyberwatch
 
@@ -29,8 +29,8 @@ Si nécessaire, l'agent WAPT est disponible à cette adresse : [https://wapt.tra
     - Corps de la requête :
 
             {
-               "computer_name":"#SERVER_NAME#",
-               "soft":"#PRODUCTS#"
+               "hostname":"{{ asset.name }}",
+               "product":"{{ technology.product }}"
             }
 
     - Méthode : POST
@@ -46,7 +46,7 @@ Créer un fichier `wapt_integration.service` dans `/etc/systemd/system/` avec le
 
 ```
 [Unit]
-Description=My Flask App
+Description=Integration Cyberwatch WAPT
 After=network.target
 
 [Service]
@@ -64,3 +64,7 @@ WantedBy=multi-user.target
 10. Recharger Systemd avec `sudo systemctl daemon-reload` pour recharger la configuration systemd
 
 11. Démarrer le Service avec `sudo systemctl enable --now wapt_integration.service` et faire un test.
+
+### Schéma
+
+![Alt text](image.png)
