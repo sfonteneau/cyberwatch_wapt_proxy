@@ -10,9 +10,9 @@
 
 ### Configuration du proxy
 
-4. **Préparation du serveur :** Placez les fichiers `proxy.py`, `integration.conf`, le fichier `.crt` et le fichier `.pem` du certificat WAPT sur le serveur Cyberwatch. 
+4. **Préparation du serveur :** Placez les fichiers `wapt.py`, `integration.conf`, le fichier `.crt` et le fichier `.pem` du certificat WAPT sur le serveur Cyberwatch. 
 
-Note : il faut que le serveur avec `proxy.py` soit équipé d'un agent WAPT afin d'avoir les dépendances nécessaires pour l'intégration.
+Note : il faut que le serveur avec `wapt.py` soit équipé d'un agent WAPT afin d'avoir les dépendances nécessaires pour l'intégration.
 Si nécessaire, l'agent WAPT est disponible à cette adresse : [https://wapt.tranquil.it/wapt/releases/latest/](https://wapt.tranquil.it/wapt/releases/latest/)
 
 5. **Configuration :** Modifiez le fichier `integration.conf` en insérant les valeurs appropriées et les clés d'API Cyberwatch.
@@ -40,7 +40,7 @@ Si nécessaire, l'agent WAPT est disponible à cette adresse : [https://wapt.tra
 
 ### Finalisation
 
-9. **Exécution en tant que service :** Si tout fonctionne correctement, vous devrez ensuite exécuter `proxy.py` en tant que service, en utilisant par exemple systemd :
+9. **Exécution en tant que service :** Si tout fonctionne correctement, vous devrez ensuite exécuter `wapt.py` en tant que service, en utilisant par exemple systemd :
 
 Créer un fichier `wapt_integration.service` dans `/etc/systemd/system/` avec le contenu si dessous, en insérant les valeurs appropriées :
 
@@ -53,9 +53,9 @@ After=network.target
 User=<username>
 Group=<group>
 WorkingDirectory=</chemin/vers/votre/app>
-Environment="FLASK_APP=proxy.py"
+Environment="FLASK_APP=wapt.py"
 Environment="FLASK_ENV=development"
-ExecStart=/opt/wapt/waptpython </chemin/vers/votre/app/proxy.py>
+ExecStart=/opt/wapt/waptpython </chemin/vers/votre/app/wapt.py>
 
 [Install]
 WantedBy=multi-user.target
