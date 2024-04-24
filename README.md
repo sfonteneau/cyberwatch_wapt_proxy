@@ -16,6 +16,7 @@ Note : il faut que le serveur avec `wapt.py` soit équipé d'un agent WAPT afin 
 Si nécessaire, l'agent WAPT est disponible à cette adresse : [https://wapt.tranquil.it/wapt/releases/latest/](https://wapt.tranquil.it/wapt/releases/latest/)
 
 5. **Configuration :** Modifiez le fichier `integration.conf` en insérant les valeurs appropriées et les clés d'API Cyberwatch.
+    Depuis la version 2.5, la plupart des URL d’API est protégée par des certificats clients SSL (ssl_pem_client_location et ssl_cert_client_location dans integarations.conf). Vous pouvez les trouver dans `/opt/wapt/conf`.
 
 6. **Test :** Pour tester le fonctionnement, lancez le proxy en utilisant la commande ` sudo /opt/wapt/waptpython.sh wapt.py`.
 
