@@ -44,7 +44,7 @@ url = CONF.get('cyberwatch', 'url')
 access_key = CONF.get('cyberwatch', 'access_key')
 secret_key = CONF.get('cyberwatch', 'secret_key')
 
-# dict_name_soft = json.loads(CONF.get('cyberwatch', 'software_dict'))
+dict_name_soft = json.loads(CONF.get('cyberwatch', 'software_dict'))
 
 def search_uuid(computername):
     """Search for UUID with hostname"""
@@ -70,21 +70,20 @@ def search_uuid(computername):
         return None  # Return None or handle specific exceptions if needed
 
 
-def find_software_dict(data, soft_name):
-    for software in data['result']:
-        if software.get('name') in soft_name or software.get('package') in soft_name:
-            return software
-    return None
+def find_software_dict(software_dict, soft_name):
+    for key in software_dict:
+        if key in soft_name:
+            return software_dict[key]
 
-def is_approximate_match(str1, str2, threshold=70):
+def is_approximate_match(str1, str2, threshold=80):
     result = fuzz.token_sort_ratio(str1, str2) > threshold
     return result
 
 def find_software(data, soft_name):
     for software in data['result']:
         if software.get('name') in soft_name or software.get('package') in soft_name:
-            logging.warning("Package found and on machine")
-            return  software
+            logging.warning("Package found on machine")
+            return software
 
     response = requests.get(f'{wapt_url}/api/v3/packages', auth=(wapt_user,wapt_password),verify=False,cert=(ssl_cert_client_location, ssl_pem_client_location))
 
@@ -101,7 +100,12 @@ def find_software(data, soft_name):
                 logging.warning("Package found in repo with fuzz but not pushed yet on machine")
                 return software_data
         else:
-            logging.warning("Exact name of package not found in repo")
+            logging.warning("Package not found, trying dictionnary method")
+            dict = find_software_dict(dict_name_soft, soft_name)
+            if dict:
+                logging.warning("Package found with dictionnary method")
+                filtered_data = [entry for entry in response_data["result"] if entry.get("package") == dict]
+                return filtered_data[0]
 
 # Install package with WAPT
 @app.route('/install_package', methods=['POST'])
@@ -142,8 +146,6 @@ def install_package():
                 soft_name.append(update['target']['product'].lower())
             if soft_name[0].lower() == update['target']['product'].lower():
                 soft_name.append(update['current']['product'].lower())
-    logging.error(soft_name)
-
 
     # Send GET request
     response = requests.get(f'{wapt_url}/api/v1/host_data?uuid={uuid}&field=installed_packages', auth=(wapt_user,wapt_password),verify=False,cert=(ssl_cert_client_location, ssl_pem_client_location))
@@ -207,8 +209,8 @@ def install_package():
             package_entry.sign_package(cert_path, key)
 
             # upload
-            upload_request = session.post('%s/api/v3/upload_packages' % wapt_url,
-                                            files={os.path.basename(new_fn): open(package_entry.localpath, 'rb').read()})
+            upload_request = requests.post('%s/api/v3/upload_packages' % wapt_url, files={os.path.basename(new_fn): open(package_entry.localpath,
+                                            'rb').read()},auth=(wapt_user,wapt_password),verify=False,cert=(ssl_cert_client_location, ssl_pem_client_location))
             upload_request.raise_for_status()
             upload_result = upload_request.json()
             if not upload_result['success']:
