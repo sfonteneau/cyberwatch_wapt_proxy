@@ -5,7 +5,7 @@ import json
 import logging
 import tempfile
 from fuzzywuzzy import fuzz
-from requests.auth import HTTPBasicAuth
+import waptlicences
 from configparser import ConfigParser
 import requests
 from urllib3.exceptions import InsecureRequestWarning
@@ -15,7 +15,8 @@ sys.path.append('/opt/wapt')
 from waptcrypto import SSLCertificate, SSLPrivateKey
 from waptpackage import PackageEntry
 from waptutils import ensure_list
-
+from common import get_requests_client_cert_session
+from common import Wapt
 from flask import Flask, request
 
 app = Flask(__name__)
@@ -27,17 +28,15 @@ CONF = ConfigParser()
 CONF.read(os.path.join(os.path.abspath(
     os.path.dirname(__file__)), '.', 'integration.conf'))
 
+ini_wapt_path = CONF.get('cyberwatch', 'waptgetini')
+w = Wapt(config_filename=ini_wapt_path)
+
 # WAPT Conf
-wapt_url = CONF.get('cyberwatch', 'wapt_server_url')
-wapt_user = CONF.get('cyberwatch', 'wapt_user')
-wapt_password = CONF.get('cyberwatch', 'wapt_password')
+wapt_url = w.waptserver.server_url
 key = SSLPrivateKey(CONF.get('cyberwatch', 'ssl_pem_location'), password=CONF.get(
     'cyberwatch', 'wapt_ssl_key'))
 cert_path = SSLCertificate(CONF.get('cyberwatch', 'ssl_cert_location'))
 prefix = CONF.get('cyberwatch', 'prefix')
-
-ssl_pem_client_location = CONF.get('cyberwatch', 'ssl_pem_client_location')
-ssl_cert_client_location = CONF.get('cyberwatch', 'ssl_cert_client_location')
 
 # Cyberwatch Conf
 url = CONF.get('cyberwatch', 'url')
@@ -46,11 +45,11 @@ secret_key = CONF.get('cyberwatch', 'secret_key')
 
 dict_name_soft = json.loads(CONF.get('cyberwatch', 'software_dict'))
 
-def search_uuid(computername):
+def search_uuid(computername,session):
     """Search for UUID with hostname"""
     try:
-        url = f'{wapt_url}/api/v1/hosts?filter=computer_name:{computername}&reachable=1&columns=uuid,computer_name&limit=2000'
-        response = requests.get(url, auth=(wapt_user, wapt_password), verify=False, cert=(ssl_cert_client_location, ssl_pem_client_location))
+        url = f'{wapt_url}/api/v3/hosts?filter=computer_name:{computername}&reachable=1&columns=uuid,computer_name&limit=2000'
+        response = session.get(url)
         # logging.error(response.status_code)
         if response.status_code == 200:
             try:
@@ -70,6 +69,16 @@ def search_uuid(computername):
         return None  # Return None or handle specific exceptions if needed
 
 
+def get_session_wapt(user,password):
+    t = waptlicences.waptserver_login(ini_wapt_path,user,password)
+    s = get_requests_client_cert_session(wapt_url,
+    cert=(t['client_certificate'],t['client_private_key'],t['client_private_key_password']),
+    verify=w.waptserver.verify_cert
+    )
+    s.cookies.set(t['session_cookies'][0]['Name'], t['session_cookies'][0]['Value'], domain=t['session_cookies'][0]['Domain'])
+    t= None
+    return s
+
 def find_software_dict(software_dict, soft_name):
     for key in software_dict:
         if key in soft_name:
@@ -79,13 +88,13 @@ def is_approximate_match(str1, str2, threshold=80):
     result = fuzz.token_sort_ratio(str1, str2) > threshold
     return result
 
-def find_software(data, soft_name):
+def find_software(data, soft_name,s):
     for software in data['result']:
         if software.get('name') in soft_name or software.get('package') in soft_name:
             logging.warning("Package found on machine")
             return software
 
-    response = requests.get(f'{wapt_url}/api/v3/packages', auth=(wapt_user,wapt_password),verify=False,cert=(ssl_cert_client_location, ssl_pem_client_location))
+    response = s.get(f'{wapt_url}/api/v3/packages')
 
     response_data = response.json()
 
@@ -117,24 +126,18 @@ def install_package():
     name = request.get_json()
     hostname = request.get_json()['hostname']
     soft_name = [name['product'].lower().strip()]
-    session = requests.Session()
-    session.verify = False
 
     try:
-        login_request = session.post(
-            '%s/api/v3/login' % wapt_url, json={'user': wapt_user, 'password': wapt_password})        
-        login_request.raise_for_status()  # This will log HTTP error codes automatically
-        auth = login_request.json()
-        if not auth['success']:
-            error_msg = 'Login error: %s' % auth['msg']
-            logging.error(error_msg)
-            raise Exception(error_msg)
-        else:
-            logging.warning("Login successful")
+        ##################################################
+        CONF = ConfigParser()
+        CONF.read(os.path.join(os.path.abspath(os.path.dirname(__file__)), '.', 'integration.conf'))
+        password = CONF.get('cyberwatch', 'wapt_password')
+        #################################################
+        s = get_session_wapt(CONF.get('cyberwatch', 'wapt_user'),password)
     except requests.exceptions.RequestException as e:
         logging.exception("Request failed: %s", e)
 
-    uuid = search_uuid(hostname)
+    uuid = search_uuid(hostname,s)
 
     data = requests.get(f"{url}/api/v3/assets/servers?hostname={hostname}", headers={"Accept": "application/json; charset=utf-8"}, auth=(access_key, secret_key), verify=False).json()
     cbw_id = [item['id'] for item in data if item['category'] in ['server', 'desktop']]
@@ -148,9 +151,9 @@ def install_package():
                 soft_name.append(update['current']['product'].lower())
 
     # Send GET request
-    response = requests.get(f'{wapt_url}/api/v1/host_data?uuid={uuid}&field=installed_packages', auth=(wapt_user,wapt_password),verify=False,cert=(ssl_cert_client_location, ssl_pem_client_location))
+    response = s.get(f'{wapt_url}/api/v3/host_data?uuid={uuid}&field=installed_packages')
 
-    result = find_software(response.json(), soft_name)
+    result = find_software(response.json(), soft_name,s)
 
     package = result['package']
 
@@ -180,15 +183,15 @@ def install_package():
 
         actions.append(key.sign_claim(action, signer_certificate_chain=[cert_path]))
 
-        action_request = requests.post(
-            '%s/api/v3/trigger_host_action' % wapt_url, json=actions,auth=(wapt_user,wapt_password),verify=False,cert=(ssl_cert_client_location, ssl_pem_client_location))
+        action_request = s.post(
+            '%s/api/v3/trigger_host_action' % wapt_url, json=actions)
 
         action_request.raise_for_status()
 
-        pe_req = requests.get('%s/%s.wapt' % (repo_url, uuid),auth=(wapt_user,wapt_password),verify=False,cert=(ssl_cert_client_location, ssl_pem_client_location))
+        pe_req = s.get('%s/%s.wapt' % (repo_url, uuid))
         tmp_fn = tempfile.mktemp(prefix="wapt")
         if pe_req.status_code == 404 :
-            package_entry = PackageEntry(package=result,section='host', verify=False,auth=(wapt_user,wapt_password),cert=(ssl_cert_client_location, ssl_pem_client_location))
+            package_entry = PackageEntry(package=uuid,section='host')
             package_entry.save_control_to_wapt(tmp_fn)
         else:
             pe_req.raise_for_status()
@@ -206,11 +209,11 @@ def install_package():
             package_entry.save_control_to_wapt()
             print(package_entry)
             new_fn = package_entry.build_management_package()
-            package_entry.sign_package(cert_path, key)
+
+            waptlicences.sign_package(new_fn,CONF.get('cyberwatch', 'ssl_cert_location'),CONF.get('cyberwatch', 'ssl_pem_location'),CONF.get('cyberwatch', 'wapt_ssl_key'))
 
             # upload
-            upload_request = requests.post('%s/api/v3/upload_packages' % wapt_url, files={os.path.basename(new_fn): open(package_entry.localpath,
-                                            'rb').read()},auth=(wapt_user,wapt_password),verify=False,cert=(ssl_cert_client_location, ssl_pem_client_location))
+            upload_request = s.post('%s/api/v3/upload_packages' % wapt_url, files={os.path.basename(new_fn): open(package_entry.localpath,'rb').read()})
             upload_request.raise_for_status()
             upload_result = upload_request.json()
             if not upload_result['success']:
