@@ -3,6 +3,7 @@
 import os
 import json
 import logging
+from logging.handlers import RotatingFileHandler
 import tempfile
 from fuzzywuzzy import fuzz
 import waptlicences
@@ -22,7 +23,15 @@ from flask import Flask, request
 app = Flask(__name__)
 
 # Configure logging
-logging.basicConfig(format='%(asctime)s - %(levelname)s - %(message)s')
+logger = logging.getLogger(__name__)
+logger.setLevel(logging.INFO)  # You can change this as needed
+
+log_file_path = '/var/log/cyberwatch_wapt.log'
+
+file_handler = RotatingFileHandler(log_file_path, maxBytes=1048576, backupCount=2)
+formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
+file_handler.setFormatter(formatter)
+logger.addHandler(file_handler)
 
 CONF = ConfigParser()
 CONF.read(os.path.join(os.path.abspath(
@@ -81,7 +90,7 @@ def get_session_wapt(user,password):
 
 def find_software_dict(software_dict, soft_name):
     for key in software_dict:
-        if key in soft_name:
+        if key.lower().strip() in soft_name:
             return software_dict[key]
 
 def is_approximate_match(str1, str2, threshold=80):
@@ -91,7 +100,7 @@ def is_approximate_match(str1, str2, threshold=80):
 def find_software(data, soft_name,s):
     for software in data['result']:
         if software.get('name') in soft_name or software.get('package') in soft_name:
-            logging.warning("Package found on machine")
+            logging.info("Package found on machine")
             return software
 
     response = s.get(f'{wapt_url}/api/v3/packages')
@@ -101,20 +110,19 @@ def find_software(data, soft_name,s):
     for soft in soft_name:
         for software_data in response_data["result"]:
             prefixed = prefix + "-" + soft
-            # logging.warning(software_data)
             if  soft == software_data["name"].lower() or prefixed == software_data["package"].lower():
-                logging.warning("Package found in repo but not pushed yet on machine")
+                logging.info("Package found in repo but not pushed yet on machine")
                 return software_data
             if  is_approximate_match(soft.lower(), software_data["name"].lower()) or is_approximate_match(prefixed.lower(), software_data["package"].lower()):
-                logging.warning("Package found in repo with fuzz but not pushed yet on machine")
+                logging.info("Package found in repo with fuzz but not pushed yet on machine")
                 return software_data
         else:
-            logging.warning("Package not found, trying dictionnary method")
+            logging.info("Package not found, trying dictionnary method")
             dict = find_software_dict(dict_name_soft, soft_name)
             if dict:
-                logging.warning("Package found with dictionnary method")
+                logging.info("Package found with dictionnary method")
                 filtered_data = [entry for entry in response_data["result"] if entry.get("package") == dict]
-                return filtered_data[0]
+                return filtered_data[0].lower().strip()
 
 # Install package with WAPT
 @app.route('/install_package', methods=['POST'])
@@ -153,12 +161,13 @@ def install_package():
     # Send GET request
     response = s.get(f'{wapt_url}/api/v3/host_data?uuid={uuid}&field=installed_packages')
 
+    logging.info(soft_name)
+
     result = find_software(response.json(), soft_name,s)
 
     package = result['package']
 
-    logging.error(package)
-
+    logging.info(package)
 
     if package is not None :
         actions = []
