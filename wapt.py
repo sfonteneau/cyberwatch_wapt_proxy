@@ -80,11 +80,16 @@ def search_uuid(computername,session):
 
 def get_session_wapt(user,password):
     t = waptlicences.waptserver_login(ini_wapt_path,user,password)
+    if not 'session' in t['session_cookies']:
+        session_cookies = [u for u in t['session_cookies'] if u['Domain'] == self.wremote.waptserver.server_url.split('://')[-1]][0]
+    else:
+        session_cookies = t['session_cookies']['session']
+        session_cookies['Name'] = 'session'
     s = get_requests_client_cert_session(wapt_url,
     cert=(t['client_certificate'],t['client_private_key'],t['client_private_key_password']),
     verify=w.waptserver.verify_cert
     )
-    s.cookies.set(t['session_cookies'][0]['Name'], t['session_cookies'][0]['Value'], domain=t['session_cookies'][0]['Domain'])
+    s.cookies.set(session_cookies['Name'], session_cookies['Value'], domain=session_cookies['Domain'])
     t= None
     return s
 
