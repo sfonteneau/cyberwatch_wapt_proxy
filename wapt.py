@@ -169,7 +169,10 @@ def install_package():
     logging.info(soft_name)
 
     result = find_software(response.json(), soft_name,s)
-
+    
+    if not result
+        return Response("No packet match was found for %s" % ' '.join(soft_name) , status=404)
+    
     package = result['package']
 
     logging.info(package)
@@ -239,4 +242,4 @@ def install_package():
                 os.unlink(tmp_fn)
 
 if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=5000)
+    app.run(host='127.0.0.1', port=5000)
